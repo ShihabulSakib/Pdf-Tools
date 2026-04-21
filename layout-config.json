@@ -1,0 +1,18 @@
+{
+  "paper": "a4",
+  "orientation": "landscape",
+  "nup": 6,
+  "layout": {
+    "cols": 3,
+    "rows": 2
+  },
+  "margin": 0,
+  "gap": 0,
+  "hAlign": "center",
+  "vAlign": "center",
+  "grayscale": true,
+  "invert": true,
+  "border": false,
+  "quality": 2,
+  "version": "1.0"
+}
