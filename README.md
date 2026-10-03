@@ -11,7 +11,6 @@ A comprehensive two-layer system for pixel-perfect PDF N-up layout generation, w
 | 5 — Batch Ops | `merge_and_convert.py` / `merge_and_convert.sh` | Merges folders of PDFs & converts to A4 Landscape |
 | 6 — Conversion | `convert_pdf_a4l.py` / `convert_pdf_a4l.sh` | Batch converts PDFs to A4 Landscape |
 | Config | `config.json`, `layout-config.json` | Shared layout definitions |
-| Server | `server.js` | Optional Express server to serve HTML tools |
 
 > **Design principle:** "Preview defines truth. Backend reproduces it exactly."
 > Both browser and CLI layers implement identical layout formulas for pixel-for-pixel accuracy.
@@ -60,8 +59,6 @@ Open `pdf-layout-studio.html` directly in any modern browser (Chrome/Firefox/Edg
 - Tweak layout settings in the sidebar
 - Live preview updates
 - Click **Export JSON** → save as `config.json`
-
-Alternatively, run `npm run dev` and open http://localhost:3000 (uses `server.js`).
 
 ### 3. Python CLI (Single File)
 
@@ -208,8 +205,6 @@ python process.py config.json --info
 - Load a sample PDF + your `config.json`
 - Adjust layout in real-time until satisfied
 - Export updated config → re-run Step 5
-
-Optional: serve via Express: `npm run dev` → http://localhost:3000
 
 ---
 
@@ -477,7 +472,7 @@ To confirm CLI output matches preview pixel-for-pixel:
 ```text
 Pdf-Tools/
 ├── pdf-layout-studio.html   # Browser tool (standalone, no server)
-├── index.html               # Alternate browser UI (served by server.js)
+├── index.html               # Alternate browser UI
 ├── process.py               # Python CLI: N-up layout processor
 ├── merge_and_convert.py     # Python: folder merge + A4L conversion (rich UI)
 ├── merge_and_convert.sh     # Bash: folder merge + A4L conversion (styled)
@@ -488,13 +483,10 @@ Pdf-Tools/
 ├── setup.sh                 # Linux/macOS one-shot setup
 ├── setup.ps1                # Windows PowerShell setup
 ├── setup_progress.py        # Setup progress renderer (rich/plain)
-├── server.js                # Express server (serves HTML tools)
 ├── config.json              # Default layout config (4-up A4 landscape)
 ├── layout-config.json       # Alternate layout (6-up, grayscale+invert)
 ├── metadata.json            # App metadata
-├── package.json             # Node deps (express) + scripts
 ├── requirements.txt         # Python dependencies (merged)
-├── .env.example             # Server env vars
 ├── .gitignore               # Ignore patterns
 ├── README.md                # This documentation
 └── chem_pdfs/               # Example: downloaded lecture PDFs (28 files)
