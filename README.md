@@ -51,6 +51,13 @@ Set-ExecutionPolicy -Scope CurrentUser Bypass -Force
 .\.venv\Scripts\Activate.ps1
 ```
 
+Both setup scripts display a live activity bar for running tasks and update
+their detail as command output arrives. Completed tasks are marked separately;
+when the renderer restarts after creating `.venv`, active tasks remain active.
+Linux package-index output and pip's raw download progress remain visible during
+long installs, including ARM64 systems where package resolution or builds may
+take longer.
+
 ### 2. HTML Preview Tool (Instant)
 
 Open `pdf-layout-studio.html` directly in any modern browser (Chrome/Firefox/Edge). No server required.
@@ -129,6 +136,21 @@ python download_pdfs.py links.json -d chem_pdfs --from 10 --to 25  # Range selec
 
 ---
 
+### Terminal progress behavior
+
+The command-line tools use one shared progress model:
+
+1. Count each completed file/folder, never the item that has only just started.
+2. When measurable page-level callbacks are available, display completed items
+   plus the current item's completed fraction.
+3. For work delegated to tools that do not report progress, keep the percentage
+   honest and animate an activity indicator until the operation finishes.
+4. Redraw one line in an interactive terminal; write milestone lines when
+   output is redirected. Use ASCII rendering so Windows consoles do not depend
+   on ANSI support or a particular code page.
+
+---
+
 ### Step 3: Merge Folders & Convert to A4 Landscape
 
 For folder-organized PDFs (common after download), merge multi-PDF folders losslessly and convert everything to A4 Landscape (842×595 pt).
@@ -192,6 +214,10 @@ python process.py config.json --info
 
 **Features:**
 - Dynamic terminal progress with per-file tracking, ETA, throughput
+- Progress advances only as work is completed; page callbacks report PDF work
+  in progress, while opaque external commands show a live activity indicator
+- Shared cross-platform terminal renderer (`terminal_progress.py`) for Python
+  tools; piped output stays readable and Windows consoles use a plain-text bar
 - Cross-platform (Windows CMD/PS + Linux/macOS)
 - Identical formulas to HTML preview (guaranteed match)
 - Optional grayscale/invert with optimized numpy fast-path
@@ -483,6 +509,7 @@ Pdf-Tools/
 ├── setup.sh                 # Linux/macOS one-shot setup
 ├── setup.ps1                # Windows PowerShell setup
 ├── setup_progress.py        # Setup progress renderer (rich/plain)
+├── terminal_progress.py     # Shared cross-platform CLI progress renderer
 ├── config.json              # Default layout config (4-up A4 landscape)
 ├── layout-config.json       # Alternate layout (6-up, grayscale+invert)
 ├── metadata.json            # App metadata

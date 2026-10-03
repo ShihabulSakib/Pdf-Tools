@@ -19,6 +19,7 @@ import argparse
 import subprocess
 from pathlib import Path
 from collections import defaultdict
+from terminal_progress import DynamicProgressBar as SharedProgressBar
 
 # Enable ANSI escape sequences on Windows 10/11 Command Prompt and PowerShell
 if sys.platform == "win32":
@@ -142,6 +143,9 @@ class DynamicProgressBar:
             sys.stdout.flush()
 
 
+DynamicProgressBar = SharedProgressBar
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PDF REPAIR, MERGE, AND CONVERSION UTILITIES
 # ══════════════════════════════════════════════════════════════════════════════
@@ -182,7 +186,7 @@ def sanitize_pdf(infile: Path, outfile: Path) -> bool:
     return res.returncode == 0 and outfile.exists() and outfile.stat().st_size > 0
 
 
-def merge_pdf_files(pdf_list: list[Path], merged_out: Path) -> tuple[bool, bool]:
+def merge_pdf_files(pdf_list: list[Path], merged_out: Path, progress_cb=None) -> tuple[bool, bool]:
     """
     Merges multiple PDF files into merged_out losslessly.
     Returns: (success: bool, was_sanitized: bool)
@@ -194,10 +198,12 @@ def merge_pdf_files(pdf_list: list[Path], merged_out: Path) -> tuple[bool, bool]
     try:
         import fitz
         out_doc = fitz.open()
-        for p in pdf_list:
+        for index, p in enumerate(pdf_list, start=1):
             doc = fitz.open(str(p))
             out_doc.insert_pdf(doc)
             doc.close()
+            if progress_cb:
+                progress_cb(index / len(pdf_list), "MERGING")
         out_doc.save(str(merged_out), garbage=4, deflate=True)
         out_doc.close()
         return True, False
@@ -263,7 +269,7 @@ def merge_pdf_files(pdf_list: list[Path], merged_out: Path) -> tuple[bool, bool]
     return False, False
 
 
-def convert_to_a4l(infile: Path, outfile: Path) -> bool:
+def convert_to_a4l(infile: Path, outfile: Path, progress_cb=None) -> bool:
     """Converts a PDF to A4 Landscape (842 x 595 pt)"""
     outfile.parent.mkdir(parents=True, exist_ok=True)
 
@@ -272,13 +278,16 @@ def convert_to_a4l(infile: Path, outfile: Path) -> bool:
         import fitz
         src = fitz.open(str(infile))
         out = fitz.open()
-        for page in src:
+        total_pages = max(1, src.page_count)
+        for page_index, page in enumerate(src, start=1):
             p = out.new_page(width=842.0, height=595.0)
             rect = page.rect
             scale = min(842.0 / rect.width, 595.0 / rect.height)
             sw, sh = rect.width * scale, rect.height * scale
             ox, oy = (842.0 - sw) / 2.0, (595.0 - sh) / 2.0
             p.show_pdf_page(fitz.Rect(ox, oy, ox + sw, oy + sh), src, page.number, keep_proportion=False, overlay=True)
+            if progress_cb:
+                progress_cb(page_index / total_pages)
         out.save(str(outfile), garbage=4, deflate=True)
         src.close()
         out.close()
@@ -377,19 +386,28 @@ def main():
         first_pdf = pdfs[0]
 
         if count > 1:
-            pbar.update(current=idx, item_name=f"{folder_name}/ ({count} PDFs)", stage="MERGING")
+            pbar.update(current=idx - 1, item_name=f"{folder_name}/ ({count} PDFs)", stage="MERGING")
             tmp_merged = dest_dir / f"_tmp_merge_{first_pdf.stem}.pdf"
             final_out = dest_dir / f"{first_pdf.stem}_merged_A4L.pdf"
 
             # Merge
-            ok_merge, was_sanitized = merge_pdf_files(pdfs, tmp_merged)
+            def on_merge(fraction, stage):
+                pbar.update(idx - 1 + fraction * 0.5,
+                            item_name=f"{folder_name}/ ({count} PDFs)", stage=stage)
+
+            with pbar.activity(idx - 1, f"{folder_name}/ ({count} PDFs)", "MERGING"):
+                ok_merge, was_sanitized = merge_pdf_files(pdfs, tmp_merged, progress_cb=on_merge)
             if was_sanitized:
                 stat_sanitized += len(pdfs)
 
             if ok_merge:
                 stat_merged += 1
-                pbar.update(current=idx, item_name=f"{folder_name}/ → {final_out.name}", stage="CONVERTING")
-                ok_convert = convert_to_a4l(tmp_merged, final_out)
+                def on_page(fraction):
+                    pbar.update(idx - 1 + 0.5 + fraction * 0.5,
+                                item_name=f"{folder_name}/ → {final_out.name}", stage="CONVERTING")
+
+                with pbar.activity(idx - 1 + 0.5, f"{folder_name}/ → {final_out.name}", "CONVERTING"):
+                    ok_convert = convert_to_a4l(tmp_merged, final_out, progress_cb=on_page)
                 if ok_convert:
                     stat_converted += 1
                 else:
@@ -405,13 +423,20 @@ def main():
 
         else:
             # Single PDF
-            pbar.update(current=idx, item_name=f"{folder_name}/{first_pdf.name}", stage="CONVERTING")
+            pbar.update(current=idx - 1, item_name=f"{folder_name}/{first_pdf.name}", stage="CONVERTING")
             final_out = dest_dir / f"{first_pdf.stem}_A4L.pdf"
-            ok = convert_to_a4l(first_pdf, final_out)
+            def on_page(fraction):
+                pbar.update(idx - 1 + fraction, item_name=f"{folder_name}/{first_pdf.name}",
+                            stage="CONVERTING")
+
+            with pbar.activity(idx - 1, f"{folder_name}/{first_pdf.name}", "CONVERTING"):
+                ok = convert_to_a4l(first_pdf, final_out, progress_cb=on_page)
             if ok:
                 stat_converted += 1
             else:
                 stat_failed += 1
+
+        pbar.update(current=idx, item_name=folder_name, stage="FINISHED")
 
     pbar.complete("All folders processed")
     elapsed = time.time() - start_time

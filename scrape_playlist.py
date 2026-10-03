@@ -38,6 +38,7 @@ from urllib.parse import urlparse
 
 import regex as re
 from yt_dlp import YoutubeDL
+from terminal_progress import DynamicProgressBar
 
 # ----------------------------------------------------------------------------
 # Unicode helpers
@@ -203,6 +204,7 @@ def main():
     playlist_title, entries = list_playlist(args.playlist)
     total = len(entries)
     print(f"Playlist: {playlist_title or '(untitled)'}  --  {total} videos\n")
+    progress = DynamicProgressBar(total, "Scraping", unit="videos") if total else None
 
     previous = load_existing(args.output) if args.resume else {}
     result = {
@@ -224,6 +226,8 @@ def main():
             rec["index"] = idx
             result["videos"].append(rec)
             print(f"[{idx:03d}/{total}] (cached) {rec['title']}")
+            if progress:
+                progress.update(idx, rec["title"], "CACHED")
             continue
 
         rec = {
@@ -243,32 +247,35 @@ def main():
             rec["error"] = "playlist entry has no video id (deleted/private?)"
             result["videos"].append(rec)
             save_json(args.output, result)
+            if progress:
+                progress.update(idx, flat_title, "SKIPPED")
             continue
 
         try:
-            # pass 1: description only (fast)
-            info = fetch_with_retry(video_url, with_comments=False, max_comments=0)
-            rec["title"] = clean_text(info.get("title") or flat_title)
-            files, skipped = extract_links(info.get("description") or "", "description")
+            with progress.activity(idx - 1, flat_title, "FETCHING"):
+                # pass 1: description only (fast)
+                info = fetch_with_retry(video_url, with_comments=False, max_comments=0)
+                rec["title"] = clean_text(info.get("title") or flat_title)
+                files, skipped = extract_links(info.get("description") or "", "description")
 
-            # pass 2: pinned / uploader comments, only if description had nothing
-            if not files and not args.no_comments:
-                info2 = fetch_with_retry(video_url, with_comments=True, max_comments=args.max_comments)
-                comments = info2.get("comments") or []
-                # pinned + uploader comments first, then everything else
-                prio = [c for c in comments if c.get("is_pinned") or c.get("author_is_uploader")]
-                for c in prio:
-                    src = "pinned_comment" if c.get("is_pinned") else "uploader_comment"
-                    f2, s2 = extract_links(c.get("text") or "", src)
-                    files += f2
-                    skipped += s2
-                if not files:   # last resort: any other comment
-                    for c in comments:
-                        if c in prio:
-                            continue
-                        f2, s2 = extract_links(c.get("text") or "", "comment")
+                # pass 2: pinned / uploader comments, only if description had nothing
+                if not files and not args.no_comments:
+                    info2 = fetch_with_retry(video_url, with_comments=True, max_comments=args.max_comments)
+                    comments = info2.get("comments") or []
+                    # pinned + uploader comments first, then everything else
+                    prio = [c for c in comments if c.get("is_pinned") or c.get("author_is_uploader")]
+                    for c in prio:
+                        src = "pinned_comment" if c.get("is_pinned") else "uploader_comment"
+                        f2, s2 = extract_links(c.get("text") or "", src)
                         files += f2
                         skipped += s2
+                    if not files:   # last resort: any other comment
+                        for c in comments:
+                            if c in prio:
+                                continue
+                            f2, s2 = extract_links(c.get("text") or "", "comment")
+                            files += f2
+                            skipped += s2
 
             rec["drive_links"] = dedupe(files, "file_id")
             rec["skipped_links"] = dedupe(skipped, "url")
@@ -288,11 +295,14 @@ def main():
 
         result["videos"].append(rec)
         save_json(args.output, result)          # checkpoint after every video
+        progress.update(idx, flat_title, "DONE" if rec["status"] == "ok" else "FAILED")
         time.sleep(args.delay)
 
     # final write (also covers the all-cached case)
     result["videos"].sort(key=lambda v: v["index"])
     save_json(args.output, result)
+    if progress:
+        progress.complete("Finished")
 
     ok = sum(1 for v in result["videos"] if v["status"] == "ok")
     with_links = sum(1 for v in result["videos"] if v["drive_links"])

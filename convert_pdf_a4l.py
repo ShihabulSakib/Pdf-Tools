@@ -17,6 +17,7 @@ import shutil
 import argparse
 import subprocess
 from pathlib import Path
+from terminal_progress import DynamicProgressBar as SharedProgressBar
 
 # Enable VT100 ANSI sequences on Windows 10/11 Command Prompt and PowerShell
 if sys.platform == "win32":
@@ -156,6 +157,10 @@ class DynamicProgressBar:
             sys.stdout.flush()
 
 
+# Keep the tool's public name while sharing the renderer with the other CLIs.
+DynamicProgressBar = SharedProgressBar
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # PDF CONVERSION ENGINE
 # ══════════════════════════════════════════════════════════════════════════════
@@ -168,7 +173,8 @@ def format_size(bytes_val: int) -> str:
     return f"{bytes_val:.1f} TB"
 
 
-def convert_single_pdf(src_path: Path, dst_path: Path, width_pt: int = 842, height_pt: int = 595) -> bool:
+def convert_single_pdf(src_path: Path, dst_path: Path, width_pt: int = 842, height_pt: int = 595,
+                       progress_cb=None) -> bool:
     """
     Converts src_path PDF to A4 Landscape (842 x 595 pt) at dst_path.
     Tries PyMuPDF (fitz) if installed, otherwise uses Ghostscript (gs).
@@ -181,7 +187,8 @@ def convert_single_pdf(src_path: Path, dst_path: Path, width_pt: int = 842, heig
         src_doc = fitz.open(str(src_path))
         out_doc = fitz.open()
 
-        for page in src_doc:
+        total_pages = max(1, src_doc.page_count)
+        for page_index, page in enumerate(src_doc, start=1):
             out_page = out_doc.new_page(width=width_pt, height=height_pt)
             src_rect = page.rect
             scale = min(width_pt / src_rect.width, height_pt / src_rect.height)
@@ -191,6 +198,8 @@ def convert_single_pdf(src_path: Path, dst_path: Path, width_pt: int = 842, heig
             oy = (height_pt - scaled_h) / 2.0
             fit_rect = fitz.Rect(ox, oy, ox + scaled_w, oy + scaled_h)
             out_page.show_pdf_page(fit_rect, src_doc, page.number, keep_proportion=False, overlay=True)
+            if progress_cb:
+                progress_cb(page_index, total_pages)
 
         out_doc.save(str(dst_path), garbage=4, deflate=True, clean=True)
         src_doc.close()
@@ -309,16 +318,24 @@ def main():
         out_dir = output_root / rel_path.parent
         out_file = out_dir / f"{pdf.stem}{args.suffix}.pdf"
 
-        pbar.update(current=idx, item_name=pdf.name, status_tag="CONVERTING")
-
+        converted = False
         try:
-            ok = convert_single_pdf(pdf, out_file)
+            def on_page(page, total_pages):
+                pbar.update(idx - 1 + page / total_pages, item_name=pdf.name,
+                            stage=f"PAGE {page}/{total_pages}")
+
+            with pbar.activity(idx - 1, pdf.name, "CONVERTING"):
+                ok = convert_single_pdf(pdf, out_file, progress_cb=on_page)
             if ok:
                 succeeded += 1
+                converted = True
             else:
                 failed += 1
         except Exception as e:
             failed += 1
+            print(f"\nError converting {pdf.name}: {e}", file=sys.stderr)
+        finally:
+            pbar.update(idx, item_name=pdf.name, stage="DONE" if converted else "FAILED")
 
     pbar.complete("All files processed")
     total_elapsed = time.time() - start_time

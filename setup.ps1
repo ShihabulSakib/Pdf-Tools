@@ -129,6 +129,7 @@ function Replay-Tasks {
         if ($t.State -eq 'pending') { continue }
         Send-Json @{ op = 'task_start'; id = $id; detail = $t.Detail }
         switch ($t.State) {
+            'running' { }
             'done'    { Send-Json @{ op = 'task_done'; id = $id } }
             'failed'  { Send-Json @{ op = 'task_fail'; id = $id; detail = $t.Detail } }
             'skipped' { Send-Json @{ op = 'task_skip'; id = $id; detail = $t.Detail } }
@@ -467,7 +468,7 @@ if ($NoSystem) {
                 if (-not $qpdfOk) { $pkgs += 'qpdf' }
                 if (-not $gsOk)   { $pkgs += 'ghostscript' }
                 Invoke-Logged 'sys' "choco install $($pkgs -join ' ')" {
-                    & choco install @pkgs -y --no-progress
+                    & choco install @pkgs -y
                 } | Out-Null
             }
             'scoop' {
@@ -565,13 +566,13 @@ if (-not (Test-Path $ReqFile)) {
 }
 
 if (Invoke-Logged 'deps' 'pip install --upgrade pip' {
-    & $VenvPy -m pip install --quiet --upgrade pip
+    & $VenvPy -m pip install --progress-bar raw --upgrade pip
 }) { } else {
     Warn 'pip self-upgrade failed - continuing with the bundled pip.'
 }
 
 if (-not (Invoke-Logged 'deps' 'pip install -r requirements.txt' {
-        & $VenvPy -m pip install -r $ReqFile
+        & $VenvPy -m pip install --progress-bar raw -r $ReqFile
     })) {
     Die 'pip install failed - see the output panel above.'
 }

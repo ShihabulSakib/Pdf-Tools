@@ -43,6 +43,7 @@ from pathlib import Path
 import gdown
 import regex as re
 from pathvalidate import sanitize_filename
+from terminal_progress import DynamicProgressBar
 
 MAX_NAME_BYTES = 240          # leave headroom under the 255-byte limit
 
@@ -222,13 +223,17 @@ def main():
 
     done = skipped_existing = 0
     failed, no_link = [], []
+    selected = [
+        v for v in videos
+        if args.start <= v["index"] <= args.end
+        and (only is None or v["index"] in only)
+    ]
+    total_links = sum(len(v.get("drive_links") or []) for v in selected)
+    progress = DynamicProgressBar(total_links, "Downloading", unit="files") if total_links else None
+    completed = 0
 
-    for v in videos:                      # still strictly in playlist order
+    for v in selected:                    # still strictly in playlist order
         idx = v["index"]
-        if idx < args.start or idx > args.end:
-            continue
-        if only is not None and idx not in only:
-            continue
 
         links = v.get("drive_links") or []
         if not links:
@@ -244,19 +249,30 @@ def main():
             if is_valid_pdf(dest):
                 skipped_existing += 1
                 print(f"{label}  (already downloaded)")
+                completed += 1
+                if progress:
+                    progress.update(completed, label, "SKIPPED")
                 continue
 
             print(f"{label}\n    downloading {link['file_id']} ...")
+            succeeded = False
             try:
-                final, note = download_one(link["file_id"], dest, args.retries, args.retry_wait)
+                with progress.activity(completed, label, "DOWNLOADING"):
+                    final, note = download_one(link["file_id"], dest, args.retries, args.retry_wait)
                 done += 1
+                succeeded = True
                 print(f"    ok -> {final.name}" + (f"   [{note}]" if note else ""))
             except Exception as e:  # noqa: BLE001
                 failed.append({"index": idx, "title": v.get("title"), "file_id": link["file_id"],
                                "url": link.get("original_url"), "error": str(e)})
                 print(f"    !! FAILED: {e}", file=sys.stderr)
 
+            completed += 1
+            progress.update(completed, label, "DONE" if succeeded else "FAILED")
             time.sleep(args.delay)
+
+    if progress:
+        progress.complete("Finished")
 
     # ---- summary ------------------------------------------------------------
     print("\n================ SUMMARY ================")

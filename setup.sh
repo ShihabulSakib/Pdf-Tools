@@ -98,7 +98,7 @@ replay() {
     for i in "${!T_ID[@]}"; do
         _emit_add "$i"
         case "${T_STATE[$i]}" in
-            running) _emit_start "$i"; _emit_end "$i" done   ;;
+            running) _emit_start "$i" ;;
             done)    _emit_start "$i"; _emit_end "$i" done   ;;
             failed)  _emit_start "$i"; _emit_end "$i" fail   ;;
             skipped) _emit_start "$i"; _emit_end "$i" skip   ;;
@@ -294,7 +294,7 @@ install_sys() {   # install_sys <canonical-pkg>...
 
     case "$PM" in
         apt-get)
-            sudo_do env DEBIAN_FRONTEND=noninteractive apt-get update -qq || return 1
+            sudo_do env DEBIAN_FRONTEND=noninteractive apt-get update || return 1
             sudo_do env DEBIAN_FRONTEND=noninteractive \
                 apt-get install -y --no-install-recommends "${pkgs[@]}"
             ;;
@@ -446,10 +446,10 @@ if [[ ! -f "$REQ_FILE" ]]; then
     die "Missing $REQ_FILE"
 fi
 
-run_logged deps "$VENV_PY" -m pip install --quiet --upgrade pip \
+run_logged deps "$VENV_PY" -m pip install --progress-bar raw --upgrade pip \
     || note warn "pip self-upgrade failed — continuing with the bundled pip."
 
-run_logged deps "$VENV_PY" -m pip install -r "$REQ_FILE" \
+run_logged deps "$VENV_PY" -m pip install --progress-bar raw -r "$REQ_FILE" \
     || die "pip install failed — see the output panel above."
 
 # ── Task: verification ─────────────────────────────────────────────────

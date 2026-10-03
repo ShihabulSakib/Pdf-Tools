@@ -32,6 +32,7 @@ import time
 import shutil
 import argparse
 from pathlib import Path
+from terminal_progress import DynamicProgressBar as SharedProgressBar
 
 # Enable VT100 ANSI sequences on Windows 10/11 Command Prompt and PowerShell
 if sys.platform == "win32":
@@ -210,6 +211,9 @@ class DynamicProgressBar:
                 f"({self.total}/{self.total}) {S.GREEN}✔ {message}{S.RESET} in {elapsed}\n"
             )
             sys.stdout.flush()
+
+
+DynamicProgressBar = SharedProgressBar
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -401,9 +405,6 @@ def process_pdf(
         end_p = min(num_pages, (sheet_idx + 1) * cells_per_sheet)
         range_str = f"p{start_p}-{end_p}/{num_pages}"
 
-        if sheet_progress_cb:
-            sheet_progress_cb(sheet_idx + 1, num_sheets, range_str)
-
         out_page = out_doc.new_page(
             width=layout["paper_w"],
             height=layout["paper_h"],
@@ -433,6 +434,9 @@ def process_pdf(
             if do_border:
                 cell_rect = fitz.Rect(cell["x"], cell["y"], cell["x"] + cell["w"], cell["y"] + cell["h"])
                 out_page.draw_rect(cell_rect, color=border_color, width=border_width)
+
+        if sheet_progress_cb:
+            sheet_progress_cb(sheet_idx + 1, num_sheets, range_str)
 
     src_doc.close()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -596,16 +600,19 @@ def main(argv: list[str] | None = None) -> int:
         pbar = DynamicProgressBar(total=total_files, title="Batch Imposition", unit="files", width=28, use_color=not args.no_color)
 
         for idx, (src, dst) in enumerate(zip(pdf_files, out_paths), 1):
-            pbar.update(current=idx, item_name=src.name, stage="IMPOSING")
+            pbar.update(current=idx - 1, item_name=src.name, stage="IMPOSING")
 
             def on_sheet(cur_sheet, tot_sheets, rng):
-                pbar.update(current=idx, item_name=f"{src.name} [{cur_sheet}/{tot_sheets}]", stage="IMPOSING")
+                pbar.update(current=idx - 1 + cur_sheet / tot_sheets,
+                             item_name=f"{src.name} [{cur_sheet}/{tot_sheets}]", stage="IMPOSING")
 
             try:
                 process_pdf(src, dst, cfg, sheet_progress_cb=on_sheet)
                 succeeded += 1
             except Exception as e:
                 failed += 1
+            finally:
+                pbar.update(current=idx, item_name=src.name, stage="FINISHED")
 
         pbar.complete("Batch complete")
         print_summary(total_files, succeeded, failed, time.time() - start_time, out_paths[0].parent)
@@ -630,7 +637,8 @@ def main(argv: list[str] | None = None) -> int:
         pbar = DynamicProgressBar(total=total_sheets, title="Page Imposition", unit="sheets", width=28, use_color=not args.no_color)
 
         def on_sheet_single(cur_sheet, tot_sheets, rng):
-            pbar.update(current=cur_sheet, item_name=f"{src.name} ({rng})", stage="STAMPING")
+            pbar.update(current=cur_sheet / tot_sheets,
+                         item_name=f"{src.name} ({rng})", stage="STAMPING")
 
         try:
             process_pdf(src, dst, cfg, sheet_progress_cb=on_sheet_single)
@@ -639,6 +647,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             failed += 1
             print(f"\n{Style.RED}Error processing {src.name}:{Style.RESET} {e}", file=sys.stderr)
+            pbar.update(current=total_sheets, item_name=src.name, stage="FAILED")
 
         print_summary(1, succeeded, failed, time.time() - start_time, dst)
 

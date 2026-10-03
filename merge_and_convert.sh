@@ -95,15 +95,42 @@ sanitize_pdf() {
        -dPrinted=false -sOutputFile="$outfile" "$infile" 2>/dev/null
 }
 
+PROGRESS_STAGE="PROCESSING"
+PROGRESS_NAME=""
+run_with_progress() {
+    local pid spinner_index=0
+    local -a frames=('|' '/' '-' '\')
+    "$@" &
+    pid=$!
+    while [[ -t 1 ]]; do
+        printf "\r${CLR} ${BLD}Batch Progress${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${BR_YEL}[%s %s]${RST} %s" \
+            "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$DONE_FOLDER" "$TOTAL_FOLDERS" \
+            "$ELAPSED_FMT" "$ETA_FMT" "$PROGRESS_STAGE" "${frames[$spinner_index]}" "$PROGRESS_NAME"
+        kill -0 "$pid" 2>/dev/null || break
+        spinner_index=$(((spinner_index + 1) % ${#frames[@]}))
+        sleep 0.1
+    done
+    if [[ ! -t 1 ]]; then
+        printf "\r${CLR} ${BLD}Batch Progress${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${BR_YEL}[%s ...]${RST} %s" \
+            "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$DONE_FOLDER" "$TOTAL_FOLDERS" \
+            "$ELAPSED_FMT" "$ETA_FMT" "$PROGRESS_STAGE" "$PROGRESS_NAME"
+    fi
+    local status=0
+    wait "$pid" || status=$?
+    [[ -t 1 ]] || printf '\n'
+    return "$status"
+}
+
 for folder in "${FOLDER_LIST[@]}"; do
     (( CURRENT_FOLDER++ )) || true
+    DONE_FOLDER=$((CURRENT_FOLDER - 1))
 
     NOW=$(date +%s)
     ELAPSED=$(( NOW - START_TIME ))
     [[ $ELAPSED -eq 0 ]] && ELAPSED=1
 
-    RATE_X100=$(( CURRENT_FOLDER * 100 / ELAPSED ))
-    REMAINING=$(( TOTAL_FOLDERS - CURRENT_FOLDER ))
+    RATE_X100=$(( DONE_FOLDER * 100 / ELAPSED ))
+    REMAINING=$(( TOTAL_FOLDERS - DONE_FOLDER ))
     if [[ $RATE_X100 -gt 0 ]]; then
         ETA_SECS=$(( REMAINING * 100 / RATE_X100 ))
     else
@@ -112,8 +139,8 @@ for folder in "${FOLDER_LIST[@]}"; do
     ELAPSED_FMT=$(format_time "$ELAPSED")
     ETA_FMT=$(format_time "$ETA_SECS")
 
-    PERCENT=$(( CURRENT_FOLDER * 100 / TOTAL_FOLDERS ))
-    FILLED=$(( CURRENT_FOLDER * BAR_WIDTH / TOTAL_FOLDERS ))
+    PERCENT=$(( DONE_FOLDER * 100 / TOTAL_FOLDERS ))
+    FILLED=$(( DONE_FOLDER * BAR_WIDTH / TOTAL_FOLDERS ))
     EMPTY=$(( BAR_WIDTH - FILLED ))
 
     BAR_FILL=$(printf "%0.s█" $(seq 1 $FILLED 2>/dev/null) || true)
@@ -145,8 +172,8 @@ for folder in "${FOLDER_LIST[@]}"; do
 
     if [[ $COUNT -gt 1 ]]; then
         # Multi-PDF: Merge & Convert
-        printf "\r${CLR} ${BLD}Batch Progress${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${BR_YEL}[MERGING %d PDFs]${RST} %s" \
-            "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$CURRENT_FOLDER" "$TOTAL_FOLDERS" "$ELAPSED_FMT" "$ETA_FMT" "$COUNT" "$disp_folder"
+        PROGRESS_STAGE="MERGING $COUNT PDFs"
+        PROGRESS_NAME="$disp_folder"
 
         TMP_MERGED="$outdir/_tmp_merge_${first_name}.pdf"
         OUTFILE="$outdir/${first_name}_merged_A4L.pdf"
@@ -159,7 +186,7 @@ for folder in "${FOLDER_LIST[@]}"; do
             done
             QPDF_ARGS+=(-- "$TMP_MERGED")
 
-            if qpdf "${QPDF_ARGS[@]}" 2>/dev/null; then
+            if run_with_progress qpdf "${QPDF_ARGS[@]}" 2>/dev/null; then
                 MERGE_OK=1
             else
                 # Repair via Ghostscript
@@ -167,7 +194,7 @@ for folder in "${FOLDER_LIST[@]}"; do
                 ALL_SAN=1
                 for f in "${FOLDER_PDFS[@]}"; do
                     tmp_clean="$outdir/_tmp_clean_$(basename "$f")"
-                    if sanitize_pdf "$f" "$tmp_clean"; then
+                    if run_with_progress sanitize_pdf "$f" "$tmp_clean" 2>/dev/null; then
                         SAN_PDFS+=("$tmp_clean")
                         (( TOTAL_SANITIZED++ )) || true
                     else
@@ -179,7 +206,7 @@ for folder in "${FOLDER_LIST[@]}"; do
                     RETRY_ARGS=(--empty --pages)
                     for sf in "${SAN_PDFS[@]}"; do RETRY_ARGS+=("$sf" "1-z"); done
                     RETRY_ARGS+=(-- "$TMP_MERGED")
-                    if qpdf "${RETRY_ARGS[@]}" 2>/dev/null; then
+                    if run_with_progress qpdf "${RETRY_ARGS[@]}" 2>/dev/null; then
                         MERGE_OK=1
                     fi
                 fi
@@ -189,7 +216,8 @@ for folder in "${FOLDER_LIST[@]}"; do
 
         # Fallback to Ghostscript merge if qpdf failed or not installed
         if [[ $MERGE_OK -eq 0 ]]; then
-            if gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite -sOutputFile="$TMP_MERGED" "${FOLDER_PDFS[@]}" 2>/dev/null; then
+            PROGRESS_STAGE="MERGING"
+            if run_with_progress gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite -sOutputFile="$TMP_MERGED" "${FOLDER_PDFS[@]}" 2>/dev/null; then
                 MERGE_OK=1
             fi
         fi
@@ -197,10 +225,9 @@ for folder in "${FOLDER_LIST[@]}"; do
         if [[ $MERGE_OK -eq 1 ]]; then
             (( TOTAL_MERGED++ )) || true
             # Convert merged to A4L
-            printf "\r${CLR} ${BLD}Batch Progress${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${YEL}[CONVERTING A4L]${RST} %s" \
-                "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$CURRENT_FOLDER" "$TOTAL_FOLDERS" "$ELAPSED_FMT" "$ETA_FMT" "$disp_folder"
+            PROGRESS_STAGE="CONVERTING A4L"
 
-            if gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite \
+            if run_with_progress gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite \
                   -dPDFFitPage -dFIXEDMEDIA -dDEVICEWIDTHPOINTS=842 -dDEVICEHEIGHTPOINTS=595 \
                   -dAutoRotatePages=/None -sOutputFile="$OUTFILE" "$TMP_MERGED" 2>/dev/null; then
                 (( TOTAL_CONVERTED++ )) || true
@@ -215,11 +242,11 @@ for folder in "${FOLDER_LIST[@]}"; do
 
     else
         # Single PDF: Direct convert
-        printf "\r${CLR} ${BLD}Batch Progress${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${YEL}[CONVERTING]${RST} %s" \
-            "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$CURRENT_FOLDER" "$TOTAL_FOLDERS" "$ELAPSED_FMT" "$ETA_FMT" "$disp_folder"
+        PROGRESS_STAGE="CONVERTING"
+        PROGRESS_NAME="$disp_folder"
 
         OUTFILE="$outdir/${first_name}_A4L.pdf"
-        if gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite \
+        if run_with_progress gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite \
               -dPDFFitPage -dFIXEDMEDIA -dDEVICEWIDTHPOINTS=842 -dDEVICEHEIGHTPOINTS=595 \
               -dAutoRotatePages=/None -sOutputFile="$OUTFILE" "$first_pdf" 2>/dev/null; then
             (( TOTAL_CONVERTED++ )) || true

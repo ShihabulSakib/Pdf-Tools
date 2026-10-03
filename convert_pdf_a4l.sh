@@ -56,15 +56,42 @@ format_time() {
     printf "%02d:%02d" "$m" "$s"
 }
 
+render_progress() {
+    local spinner="$1"
+    printf "\r${CLR} ${BLD}Converting A4L${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${YEL}[CONVERTING %s]${RST} %s" \
+        "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$DONE" "$TOTAL" "$ELAPSED_FMT" "$ETA_FMT" "$spinner" "$FNAME"
+}
+
+run_with_progress() {
+    local pid spinner_index=0
+    local -a frames=('|' '/' '-' '\')
+    "$@" &
+    pid=$!
+    if [[ -t 1 ]]; then
+        while kill -0 "$pid" 2>/dev/null; do
+            render_progress "${frames[$spinner_index]}"
+            spinner_index=$(((spinner_index + 1) % ${#frames[@]}))
+            sleep 0.1
+        done
+    else
+        render_progress '...'
+    fi
+    local status=0
+    wait "$pid" || status=$?
+    [[ -t 1 ]] || printf '\n'
+    return "$status"
+}
+
 for infile in "${PDF_FILES[@]}"; do
     (( CURRENT++ )) || true
+    DONE=$((CURRENT - 1))
     NOW=$(date +%s)
     ELAPSED=$(( NOW - START_TIME ))
     [[ $ELAPSED -eq 0 ]] && ELAPSED=1
     
     # ETA calculation
-    RATE_X100=$(( CURRENT * 100 / ELAPSED ))
-    REMAINING_ITEMS=$(( TOTAL - CURRENT ))
+    RATE_X100=$(( DONE * 100 / ELAPSED ))
+    REMAINING_ITEMS=$(( TOTAL - DONE ))
     if [[ $RATE_X100 -gt 0 ]]; then
         ETA_SECS=$(( REMAINING_ITEMS * 100 / RATE_X100 ))
     else
@@ -74,8 +101,8 @@ for infile in "${PDF_FILES[@]}"; do
     ETA_FMT=$(format_time "$ETA_SECS")
 
     # Percentage & Bar
-    PERCENT=$(( CURRENT * 100 / TOTAL ))
-    FILLED=$(( CURRENT * BAR_WIDTH / TOTAL ))
+    PERCENT=$(( DONE * 100 / TOTAL ))
+    FILLED=$(( DONE * BAR_WIDTH / TOTAL ))
     EMPTY=$(( BAR_WIDTH - FILLED ))
 
     BAR_FILL=$(printf "%0.s█" $(seq 1 $FILLED 2>/dev/null) || true)
@@ -87,10 +114,6 @@ for infile in "${PDF_FILES[@]}"; do
     if [[ ${#DISP_FNAME} -gt 28 ]]; then
         DISP_FNAME="…${DISP_FNAME: -27}"
     fi
-
-    # Print dynamic progress line (in-place)
-    printf "\r${CLR} ${BLD}Converting A4L${RST} ${BR_CYN}%s${RST}${DIM}%s${RST} ${BR_GRN}%3d%%${RST} (${BLD}%d/%d${RST}) ${DIM}[%s < %s]${RST} ${YEL}[CONVERTING]${RST} %s" \
-        "$BAR_FILL" "$BAR_EMPTY" "$PERCENT" "$CURRENT" "$TOTAL" "$ELAPSED_FMT" "$ETA_FMT" "$DISP_FNAME"
 
     # Setup paths
     relpath="${infile#$INPUT_ROOT/}"
@@ -106,7 +129,8 @@ for infile in "${PDF_FILES[@]}"; do
     outfile="$outdir/${name}_A4L.pdf"
 
     # Execute Ghostscript
-    if gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite \
+    FNAME="$DISP_FNAME"
+    if run_with_progress gs -dNOPAUSE -dBATCH -dQUIET -sDEVICE=pdfwrite \
           -dPDFFitPage \
           -dFIXEDMEDIA \
           -dDEVICEWIDTHPOINTS=842 \

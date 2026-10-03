@@ -80,6 +80,8 @@ class PlainBackend:
         self._tails = {}
         self._labels = {}
         self._details = {}
+        self._frame = 0
+        self._line_length = 0
 
     # -- task lifecycle ------------------------------------------------------
     def task_add(self, tid, label):
@@ -93,7 +95,10 @@ class PlainBackend:
         self._state[tid] = STATE_RUNNING
         if detail:
             self._details[tid] = shorten(detail)
-        self._show(tid, "")
+        if sys.stdout.isatty():
+            self._show_running(tid)
+        else:
+            self._show(tid, "")
 
     def task_log(self, tid, line):
         tail = self._tails.setdefault(tid, [])
@@ -101,7 +106,8 @@ class PlainBackend:
         del tail[:-MAX_TAIL]
         if self._state.get(tid) == STATE_RUNNING:
             self._details[tid] = shorten(line)
-            self._show(tid, "")
+            if sys.stdout.isatty():
+                self._show_running(tid)
 
     def _finish(self, tid, state, detail=""):
         self._state[tid] = state
@@ -128,14 +134,44 @@ class PlainBackend:
         line = "%s %s" % (icon, label)
         if detail:
             line += "  \u2014 %s" % detail
+        if sys.stdout.isatty() and self._line_length:
+            print("\r" + (" " * self._line_length) + "\r", end="")
+            self._line_length = 0
         print(line, flush=True)
+
+    def _show_running(self, tid):
+        width = max(5, min(20, shutil.get_terminal_size((80, 24)).columns - 50))
+        offset = self._frame % (width * 2)
+        position = offset if offset < width else width * 2 - offset - 1
+        bar = ["-"] * width
+        bar[position] = "#"
+        line = "[>>>] %s [%s]" % (self._labels.get(tid, tid), "".join(bar))
+        detail = self._details.get(tid, "")
+        if detail:
+            line += "  \u2014 %s" % detail
+        line = line[:shutil.get_terminal_size((80, 24)).columns]
+        print("\r" + line.ljust(self._line_length), end="", flush=True)
+        self._line_length = len(line)
+
+    def tick(self):
+        if not sys.stdout.isatty():
+            return
+        running = [tid for tid, state in self._state.items() if state == STATE_RUNNING]
+        if running:
+            self._frame += 1
+            self._show_running(running[-1])
 
     # -- misc ----------------------------------------------------------------
     def note(self, level, msg):
         tag = {"warn": "WARN ", "err": "ERROR", "step": "==>  "}.get(level, "INFO ")
+        if sys.stdout.isatty() and self._line_length:
+            print("\r" + (" " * self._line_length) + "\r", end="")
+            self._line_length = 0
         print("  %s %s" % (tag, shorten(msg, 160)), flush=True)
 
     def close(self):
+        if self._line_length:
+            print(flush=True)
         sys.stdout.flush()
 
 
@@ -151,12 +187,14 @@ class TqdmBackend:
         self._bars = {}
         self._desc = {}
         self._pos = 0
+        self._active = set()
+        self._frame = 0
 
     def _bar(self, tid):
         bar = self._bars.get(tid)
         if bar is None:
-            bar = self._tqdm(total=1, position=self._pos, leave=True,
-                             bar_format="{desc}  {bar}| {elapsed}",
+            bar = self._tqdm(total=None, position=self._pos, leave=True,
+                             bar_format="{desc}  {bar:10}| {elapsed}",
                              ncols=88)
             self._pos += 1
             self._bars[tid] = bar
@@ -173,6 +211,7 @@ class TqdmBackend:
 
     def task_start(self, tid, detail=""):
         self._set_desc(tid, detail)
+        self._active.add(tid)
         self._bar(tid).refresh()
 
     def task_log(self, tid, line):
@@ -182,6 +221,8 @@ class TqdmBackend:
     def _finish(self, tid, desc):
         bar = self._bar(tid)
         bar.set_description("  %s  %s" % (desc, self._desc.get(tid, "")))
+        self._active.discard(tid)
+        bar.total = 1
         bar.n = 1
         bar.refresh()
         bar.close()
@@ -200,6 +241,15 @@ class TqdmBackend:
         if detail:
             self._desc[tid] = detail
         self._finish(tid, "SKIP ")
+
+    def tick(self):
+        if not self._active:
+            return
+        self._frame += 1
+        frame = "|/-\\"[self._frame % 4]
+        for tid in self._active:
+            self._bar(tid).set_description("  %s  %s" % (frame, self._desc.get(tid, "")))
+            self._bar(tid).refresh()
 
     def note(self, level, msg):
         sys.stderr.write("  %s\n" % shorten(msg, 200))
@@ -286,7 +336,8 @@ class RichBackend:
         cols = shutil.get_terminal_size((100, 24)).columns
         self.detail_width = max(16, min(70, cols - self.LABEL_WIDTH - self.FRAME_WIDTH))
 
-        self.console = Console(highlight=False, soft_wrap=False)
+        self.console = Console(file=sys.stdout, highlight=False, soft_wrap=False,
+                               force_terminal=sys.stdout.isatty())
         self.progress = Progress(
             _make_state_column(),
             TextColumn("{task.fields[label]}"),
@@ -299,19 +350,36 @@ class RichBackend:
         self._ids = {}
         self._tails = {}
         self._details = {}
+        self._active = set()
         self.progress.start()
 
     # -- helpers -------------------------------------------------------------
+    def _task_for(self, tid):
+        task_id = self._ids.get(tid)
+        return next((task for task in self.progress.tasks if task.id == task_id), None)
+
     def _set(self, tid, state, detail=""):
-        task = self._ids.get(tid)
+        task_id = self._ids.get(tid)
+        if task_id is None:
+            return
+        task = self._task_for(tid)
         if task is None:
             return
         if detail:
             self._details[tid] = _shorten_to(detail, self.detail_width)
-        self.progress.update(task, state=state,
+        finished = state in (STATE_DONE, STATE_FAILED, STATE_SKIPPED)
+        if finished:
+            self._active.discard(tid)
+        else:
+            self._active.add(tid)
+            if task.total is not None:
+                task.total = None
+                task.completed = 0
+                task.finished_time = None
+        self.progress.update(task_id, state=state,
                              detail=self._details.get(tid, ""),
-                             completed=state in (STATE_DONE, STATE_FAILED,
-                                                 STATE_SKIPPED))
+                             total=1 if finished else None,
+                             completed=1 if finished else 0)
 
     # -- task lifecycle ------------------------------------------------------
     def task_add(self, tid, label):
@@ -328,7 +396,8 @@ class RichBackend:
         tail = self._tails.setdefault(tid, [])
         tail.extend(trim_output(line, 1))
         del tail[:-MAX_TAIL]
-        if self.progress.tasks[self._ids[tid]].finished_time is None:
+        task = self._task_for(tid)
+        if task and task.finished_time is None:
             self._set(tid, STATE_RUNNING, line)
 
     def _finish(self, tid, state, detail=""):
@@ -366,6 +435,9 @@ class RichBackend:
     def close(self):
         self.progress.stop()
         sys.stdout.flush()
+
+    def tick(self):
+        self.progress.refresh()
 
 
 def make_backend():
@@ -443,8 +515,12 @@ def main():
     while alive:
         batch = []
         try:
-            batch.append(queue_.get(timeout=0.5))
+            batch.append(queue_.get(timeout=0.1))
         except queue.Empty:
+            try:
+                backend.tick()
+            except Exception:
+                pass
             continue
         while True:
             try:
