@@ -1,0 +1,35 @@
+# PDF Layout Studio -- Python dependencies
+# Installed by ./setup.sh (Linux/macOS) or ./setup.ps1 (Windows) into ./.venv
+#
+# ---------------------------------------------------------------------------
+# Core Runtime (Layout Processing & Conversion)
+# ---------------------------------------------------------------------------
+
+# process.py, merge_and_convert.py, convert_pdf_a4l.py -- PDF engine (import fitz)
+pymupdf>=1.23
+
+# process.py -- optional numpy fast path for grayscale/invert.
+# Strongly recommended when using grayscale+invert; falls back to slower
+# per-byte Python loop if unavailable.
+numpy>=1.24
+
+# ---------------------------------------------------------------------------
+# Scraping & Download (YouTube → Google Drive → PDFs)
+# ---------------------------------------------------------------------------
+
+# scrape_playlist.py -- YouTube playlist metadata extraction
+yt-dlp>=2024.0.0
+
+# scrape_playlist.py, download_pdfs.py -- Unicode-aware regex
+regex>=2023.0.0
+
+# download_pdfs.py -- Google Drive file downloader
+gdown>=4.7.0
+
+# download_pdfs.py -- Unicode-aware filesystem-safe filename sanitization
+pathvalidate>=3.0.0
+
+# ---------------------------------------------------------------------------
+# Setup-time only (progress rendering)
+# ---------------------------------------------------------------------------
+rich>=13.0
