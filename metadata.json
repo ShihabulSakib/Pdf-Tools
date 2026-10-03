@@ -1,0 +1,8 @@
+{
+  "name": "PDF Layout Studio",
+  "description": "Visual preview and layout generator for pixel-perfect PDF N-up page imposition.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

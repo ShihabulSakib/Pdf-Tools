@@ -1,0 +1,1657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Layout Studio</title>
+<meta name="description" content="Visual preview and layout generator for pixel-perfect PDF N-up page imposition.">
+<meta property="og:title" content="PDF Layout Studio">
+<meta property="og:description" content="Visual preview and layout generator for pixel-perfect PDF N-up page imposition.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════ */
+:root {
+  --bg:        #0b0d11;
+  --panel:     #13161e;
+  --panel-2:   #191d28;
+  --border:    #1e2330;
+  --border-2:  #272d3e;
+  --accent:    #2dd4bf;
+  --accent-dim: rgba(45,212,191,0.12);
+  --amber:     #f59e0b;
+  --text:      #dde3f0;
+  --muted:     #46506a;
+  --label:     #7a88a8;
+  --value:     #f0c070;
+  --success:   #34d399;
+  --danger:    #f87171;
+  --shadow:    0 2px 24px rgba(0,0,0,0.7);
+}
+
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+}
+
+/* ═══════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════ */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 46px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.logo-mark {
+  width: 22px; height: 22px;
+  background: var(--accent);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #000; font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  box-shadow: 0 0 10px rgba(45,212,191,0.4);
+}
+
+.vsep {
+  width: 1px; height: 20px;
+  background: var(--border-2);
+  margin: 0 2px;
+}
+
+.file-pick-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 5px;
+  color: var(--label);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.file-pick-btn:hover { border-color: var(--accent); color: var(--text); }
+.file-pick-btn svg { flex-shrink: 0; }
+
+.pdf-badge {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(52,211,153,0.1);
+  border: 1px solid rgba(52,211,153,0.3);
+  border-radius: 5px;
+  font-size: 10px;
+  color: var(--success);
+  max-width: 240px;
+}
+.pdf-badge.visible { display: flex; }
+.pdf-badge .pdf-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text);
+}
+
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* ═══════════════════════════════════════════════
+   BUTTONS
+═══════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  border-radius: 5px; border: 1px solid transparent;
+  cursor: pointer; transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-accent {
+  background: var(--accent); color: #000; border-color: var(--accent);
+}
+.btn-accent:hover { filter: brightness(1.1); }
+
+.btn-ghost {
+  background: transparent; color: var(--label); border-color: var(--border-2);
+}
+.btn-ghost:hover { color: var(--text); background: var(--panel-2); border-color: var(--border-2); }
+
+.btn-outline {
+  background: transparent; color: var(--accent); border-color: var(--accent);
+}
+.btn-outline:hover { background: var(--accent-dim); }
+
+.btn-danger-outline {
+  background: transparent; color: var(--danger); border-color: var(--danger);
+}
+.btn-danger-outline:hover { background: rgba(248,113,113,0.1); }
+
+.btn-sm { padding: 3px 8px; font-size: 9px; }
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+/* ═══════════════════════════════════════════════
+   MAIN LAYOUT
+═══════════════════════════════════════════════ */
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   SIDEBAR
+═══════════════════════════════════════════════ */
+.sidebar {
+  width: 252px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+/* ─── Section ─────────────────────────────── */
+.section { border-bottom: 1px solid var(--border); }
+
+.section-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 14px;
+  cursor: pointer; user-select: none;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--label);
+  transition: color 0.15s;
+}
+.section-hdr:hover { color: var(--text); }
+.section-hdr .chev {
+  font-size: 7px; transition: transform 0.2s; color: var(--muted);
+}
+.section.open .section-hdr .chev { transform: rotate(0deg); }
+.section.closed .section-hdr .chev { transform: rotate(-90deg); }
+.section.closed .section-body { display: none; }
+
+.section-body { padding: 6px 14px 14px; }
+
+/* ─── Form Fields ─────────────────────────── */
+.field { margin-bottom: 9px; }
+.field:last-child { margin-bottom: 0; }
+
+.flabel {
+  display: block;
+  font-size: 9px; color: var(--label);
+  letter-spacing: 0.07em; text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+select, input[type="number"], input[type="text"] {
+  width: 100%; padding: 5px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  color: var(--value);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
+}
+select:focus, input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(45,212,191,0.15);
+}
+
+input[type="number"] { -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button { display: none; }
+
+/* ─── Range Slider ────────────────────────── */
+.range-row { display: flex; align-items: center; gap: 8px; }
+input[type="range"] {
+  flex: 1; -webkit-appearance: none;
+  height: 3px; background: var(--border-2);
+  border-radius: 2px; outline: none; cursor: pointer;
+  border: none; padding: 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(45,212,191,0.5);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--accent); border: none; cursor: pointer;
+}
+.rval {
+  font-size: 11px; color: var(--value);
+  min-width: 32px; text-align: right;
+}
+
+/* ─── Toggle Group (paper/orientation) ─────── */
+.tog-group { display: flex; gap: 5px; flex-wrap: wrap; }
+.tog-btn {
+  flex: 1; min-width: 44px;
+  padding: 5px 4px; text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase;
+  border: 1px solid var(--border-2); border-radius: 4px;
+  background: var(--bg); color: var(--label);
+  cursor: pointer; transition: all 0.12s; user-select: none;
+}
+.tog-btn:hover { border-color: var(--accent); color: var(--text); }
+.tog-btn.on {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ─── N-Up Grid ────────────────────────────── */
+.nup-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.nup-btn {
+  padding: 7px 4px; text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; font-weight: 500;
+  border: 1px solid var(--border-2); border-radius: 4px;
+  background: var(--bg); color: var(--label);
+  cursor: pointer; transition: all 0.12s; user-select: none;
+  line-height: 1;
+}
+.nup-btn .nup-grid-icon {
+  display: block; font-size: 7px; color: var(--muted); margin-top: 2px;
+}
+.nup-btn:hover { border-color: var(--accent); color: var(--text); }
+.nup-btn.on {
+  background: var(--accent-dim); border-color: var(--accent);
+  color: var(--accent); font-weight: 700;
+}
+.nup-btn.on .nup-grid-icon { color: var(--accent); opacity: 0.7; }
+
+/* ─── Grid display (cols × rows) ─────────── */
+.grid-row { display: flex; gap: 6px; align-items: center; }
+.grid-row input[type="number"] { text-align: center; }
+.grid-sep { color: var(--muted); font-size: 14px; }
+
+/* ─── Checkbox Row ─────────────────────────── */
+.chk-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 0; cursor: pointer;
+}
+.chk-row input[type="checkbox"] {
+  width: 13px; height: 13px;
+  accent-color: var(--accent); cursor: pointer;
+  flex-shrink: 0;
+}
+.chk-row span {
+  font-size: 10px; color: var(--label); user-select: none;
+}
+.chk-row:hover span { color: var(--text); }
+
+/* ─── Layout Info Chip ─────────────────────── */
+.info-chips {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;
+}
+.chip {
+  padding: 3px 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 9px; color: var(--muted);
+}
+.chip strong { color: var(--value); }
+
+/* ─── Presets ──────────────────────────────── */
+.preset-list {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-bottom: 8px; max-height: 130px; overflow-y: auto;
+}
+.preset-list::-webkit-scrollbar { width: 2px; }
+.preset-list::-webkit-scrollbar-thumb { background: var(--muted); }
+
+.preset-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.preset-item:hover { border-color: var(--accent); }
+.preset-name { flex: 1; font-size: 10px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preset-desc { font-size: 8px; color: var(--muted); white-space: nowrap; }
+.preset-del { color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; }
+.preset-del:hover { color: var(--danger); }
+
+.preset-save-row { display: flex; gap: 5px; }
+.preset-save-row input { flex: 1; }
+
+/* ═══════════════════════════════════════════════
+   PREVIEW AREA
+═══════════════════════════════════════════════ */
+.preview-area {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+
+.preview-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sheet-nav { display: flex; align-items: center; gap: 6px; }
+.nav-btn {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel-2); border: 1px solid var(--border-2);
+  border-radius: 4px; color: var(--text);
+  cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: all 0.12s; user-select: none;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+.nav-btn[disabled] { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+
+.sheet-counter {
+  font-size: 10px; color: var(--label); min-width: 70px; text-align: center;
+}
+.sheet-counter strong { color: var(--value); }
+
+.zoom-wrap { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.zoom-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+.zoom-val { font-size: 10px; color: var(--value); min-width: 38px; text-align: right; }
+#zoom-range { width: 80px; }
+
+.render-progress {
+  font-size: 9px; color: var(--muted);
+  display: flex; align-items: center; gap: 5px;
+}
+.spin-tiny {
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Canvas wrapper */
+.canvas-outer {
+  flex: 1; overflow: auto; position: relative;
+  background:
+    linear-gradient(rgba(45,212,191,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45,212,191,0.02) 1px, transparent 1px),
+    #090b0f;
+  background-size: 32px 32px;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 28px;
+}
+.canvas-outer::-webkit-scrollbar { width: 6px; height: 6px; }
+.canvas-outer::-webkit-scrollbar-track { background: transparent; }
+.canvas-outer::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+
+.canvas-shadow {
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 8px 40px rgba(0,0,0,0.8),
+    0 0 100px rgba(0,0,0,0.5);
+  display: inline-block; line-height: 0;
+  transform-origin: top left;
+}
+
+#preview-canvas { display: block; }
+
+/* ─── Empty state ────────────────────────── */
+.empty-state {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px; pointer-events: none;
+}
+.empty-state .es-icon { font-size: 40px; opacity: 0.15; }
+.empty-state p { font-size: 10px; color: var(--muted); text-align: center; line-height: 1.6; }
+.empty-state p strong { color: var(--label); }
+
+/* ═══════════════════════════════════════════════
+   STATUS BAR
+═══════════════════════════════════════════════ */
+.status-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 9px; color: var(--muted);
+  flex-shrink: 0; overflow: hidden;
+}
+.status-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--muted); flex-shrink: 0;
+}
+.status-dot.ok { background: var(--success); box-shadow: 0 0 4px var(--success); }
+.status-dot.busy { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+.s-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.s-item strong { color: var(--value); }
+
+/* ═══════════════════════════════════════════════
+   MODALS
+═══════════════════════════════════════════════ */
+.modal-bg {
+  display: none; position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.75);
+  backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+.modal-bg.open { display: flex; }
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 340px; max-width: 500px; width: 100%;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.8);
+}
+.modal-title {
+  font-family: 'Sora', sans-serif;
+  font-size: 13px; font-weight: 600;
+  color: var(--text); margin-bottom: 12px;
+}
+.modal textarea {
+  width: 100%; height: 220px; resize: vertical;
+  background: var(--bg); border: 1px solid var(--border-2);
+  border-radius: 4px; color: var(--value);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; padding: 10px; outline: none; line-height: 1.5;
+}
+.modal textarea:focus { border-color: var(--accent); }
+.modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.modal-msg { font-size: 10px; color: var(--danger); margin-top: 6px; min-height: 16px; }
+
+/* ═══════════════════════════════════════════════
+   LOADING TOAST
+═══════════════════════════════════════════════ */
+.toast {
+  position: fixed; bottom: 40px; left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--panel-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px; padding: 10px 18px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--label);
+  box-shadow: var(--shadow);
+  opacity: 0; transition: all 0.25s;
+  pointer-events: none; z-index: 900;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════
+     HEADER
+════════════════════════════════════════ -->
+<header class="header">
+  <div class="logo">
+    <div class="logo-mark">PL</div>
+    PDF Layout Studio
+  </div>
+
+  <div class="vsep"></div>
+
+  <button class="file-pick-btn" id="open-btn" onclick="document.getElementById('file-input').click()">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+      <path d="M2 13V5l4-3h8v11H2z" stroke="currentColor" stroke-width="1.2" fill="none"/>
+      <path d="M6 2v3H2" stroke="currentColor" stroke-width="1.2" fill="none"/>
+    </svg>
+    Open PDF
+  </button>
+  <input type="file" id="file-input" accept=".pdf" style="display:none">
+
+  <div class="pdf-badge" id="pdf-badge">
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+      <circle cx="8" cy="8" r="8" opacity="0.2"/>
+      <path d="M5 8l2.5 2.5L11 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </svg>
+    <span class="pdf-name" id="pdf-name">—</span>
+    <span style="color:var(--muted)">·</span>
+    <span id="pdf-pages" style="color:var(--muted)">0 pp</span>
+  </div>
+
+  <div class="header-right">
+    <button class="btn btn-ghost" onclick="openImportModal()">
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+        <path d="M3 8h10M8 3l5 5-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      Import Config
+    </button>
+    <button class="btn btn-outline" onclick="openExportModal()">
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+        <path d="M8 10V2M4 6l4-4 4 4M3 13h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      Export JSON
+    </button>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════
+     MAIN
+════════════════════════════════════════ -->
+<div class="main">
+
+  <!-- ── SIDEBAR ─────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+
+    <!-- PAPER -->
+    <div class="section open" id="sec-paper">
+      <div class="section-hdr" onclick="toggleSection('sec-paper')">
+        Paper &amp; Orientation
+        <span class="chev">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="field">
+          <label class="flabel">Paper Size</label>
+          <div class="tog-group" id="paper-tog">
+            <div class="tog-btn on" data-val="a4">A4</div>
+            <div class="tog-btn" data-val="a3">A3</div>
+            <div class="tog-btn" data-val="a5">A5</div>
+            <div class="tog-btn" data-val="letter">LTR</div>
+            <div class="tog-btn" data-val="legal">Legal</div>
+            <div class="tog-btn" data-val="tabloid">Tbld</div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="flabel">Orientation</label>
+          <div class="tog-group" id="orient-tog">
+            <div class="tog-btn on" data-val="portrait">Portrait</div>
+            <div class="tog-btn" data-val="landscape">Landscape</div>
+          </div>
+        </div>
+        <div class="info-chips" id="paper-info-chips">
+          <div class="chip">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- N-UP -->
+    <div class="section open" id="sec-nup">
+      <div class="section-hdr" onclick="toggleSection('sec-nup')">
+        N-Up Layout
+        <span class="chev">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="field">
+          <label class="flabel">Pages per Sheet</label>
+          <div class="nup-grid" id="nup-grid">
+            <div class="nup-btn on" data-nup="1">1<span class="nup-grid-icon">1×1</span></div>
+            <div class="nup-btn" data-nup="2">2<span class="nup-grid-icon">2×1</span></div>
+            <div class="nup-btn" data-nup="4">4<span class="nup-grid-icon">2×2</span></div>
+            <div class="nup-btn" data-nup="6">6<span class="nup-grid-icon">3×2</span></div>
+            <div class="nup-btn" data-nup="8">8<span class="nup-grid-icon">4×2</span></div>
+            <div class="nup-btn" data-nup="9">9<span class="nup-grid-icon">3×3</span></div>
+            <div class="nup-btn" data-nup="12">12<span class="nup-grid-icon">4×3</span></div>
+            <div class="nup-btn" data-nup="16">16<span class="nup-grid-icon">4×4</span></div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="flabel">Custom Grid (cols × rows)</label>
+          <div class="grid-row">
+            <input type="number" id="cols-in" min="1" max="20" value="1" style="text-align:center">
+            <span class="grid-sep">×</span>
+            <input type="number" id="rows-in" min="1" max="20" value="1" style="text-align:center">
+          </div>
+        </div>
+        <div class="info-chips" id="cell-info-chips">
+          <div class="chip">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SPACING -->
+    <div class="section open" id="sec-spacing">
+      <div class="section-hdr" onclick="toggleSection('sec-spacing')">
+        Spacing
+        <span class="chev">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="field">
+          <label class="flabel">Margin (pt)</label>
+          <div class="range-row">
+            <input type="range" id="margin-range" min="0" max="72" step="1" value="18">
+            <span class="rval" id="margin-val">18</span>
+          </div>
+          <input type="number" id="margin-in" min="0" max="200" value="18" style="margin-top:5px">
+        </div>
+        <div class="field">
+          <label class="flabel">Gap between cells (pt)</label>
+          <div class="range-row">
+            <input type="range" id="gap-range" min="0" max="36" step="0.5" value="6">
+            <span class="rval" id="gap-val">6</span>
+          </div>
+          <input type="number" id="gap-in" min="0" max="72" step="0.5" value="6" style="margin-top:5px">
+        </div>
+        <div class="field">
+          <label class="flabel">Horizontal Alignment</label>
+          <div class="tog-group" id="halign-tog">
+            <div class="tog-btn" data-val="left">Left</div>
+            <div class="tog-btn on" data-val="center">Center</div>
+            <div class="tog-btn" data-val="right">Right</div>
+          </div>
+        </div>
+        <div class="field">
+          <label class="flabel">Vertical Alignment</label>
+          <div class="tog-group" id="valign-tog">
+            <div class="tog-btn" data-val="top">Top</div>
+            <div class="tog-btn on" data-val="center">Center</div>
+            <div class="tog-btn" data-val="bottom">Bottom</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- APPEARANCE -->
+    <div class="section open" id="sec-appear">
+      <div class="section-hdr" onclick="toggleSection('sec-appear')">
+        Appearance
+        <span class="chev">▼</span>
+      </div>
+      <div class="section-body">
+        <label class="chk-row">
+          <input type="checkbox" id="gray-chk"> <span>Grayscale</span>
+        </label>
+        <label class="chk-row">
+          <input type="checkbox" id="invert-chk"> <span>Invert colors</span>
+        </label>
+        <label class="chk-row">
+          <input type="checkbox" id="border-chk"> <span>Cell borders</span>
+        </label>
+        <div class="field" style="margin-top:10px">
+          <label class="flabel">Render quality (PDF.js scale)</label>
+          <div class="range-row">
+            <input type="range" id="quality-range" min="1" max="4" step="0.5" value="2">
+            <span class="rval" id="quality-val">2×</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRESETS -->
+    <div class="section open" id="sec-presets">
+      <div class="section-hdr" onclick="toggleSection('sec-presets')">
+        Presets
+        <span class="chev">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="preset-list" id="preset-list"></div>
+        <div class="preset-save-row">
+          <input type="text" id="preset-name-in" placeholder="preset name…" maxlength="32">
+          <button class="btn btn-ghost btn-sm" onclick="savePreset()">Save</button>
+        </div>
+      </div>
+    </div>
+
+  </aside><!-- /sidebar -->
+
+  <!-- ── PREVIEW AREA ──────────────────────── -->
+  <section class="preview-area">
+
+    <div class="preview-toolbar">
+      <!-- Sheet navigation -->
+      <div class="sheet-nav">
+        <div class="nav-btn" id="prev-btn" disabled onclick="prevSheet()">‹</div>
+        <div class="sheet-counter">
+          Sheet <strong id="cur-sheet">1</strong> / <strong id="tot-sheets">1</strong>
+        </div>
+        <div class="nav-btn" id="next-btn" disabled onclick="nextSheet()">›</div>
+      </div>
+
+      <!-- Render progress -->
+      <div class="render-progress" id="render-prog" style="display:none">
+        <div class="spin-tiny"></div>
+        <span id="render-prog-txt">Rendering…</span>
+      </div>
+
+      <!-- Zoom -->
+      <div class="zoom-wrap">
+        <span class="zoom-label">Zoom</span>
+        <input type="range" id="zoom-range" min="20" max="200" step="5" value="100">
+        <span class="zoom-val" id="zoom-val">100%</span>
+      </div>
+    </div>
+
+    <div class="canvas-outer" id="canvas-outer">
+      <!-- Empty state shown when no PDF loaded -->
+      <div class="empty-state" id="empty-state">
+        <div class="es-icon">⬛</div>
+        <p><strong>No PDF loaded</strong><br>Open a PDF to preview the layout.<br>The canvas below shows the geometry only.</p>
+      </div>
+      <div class="canvas-shadow" id="canvas-shadow">
+        <canvas id="preview-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-dot" id="status-dot"></div>
+      <div class="s-item" id="status-msg">Ready — open a PDF to begin</div>
+      <div class="s-item" style="margin-left:auto">
+        <span>paper <strong id="st-paper">—</strong></span>
+      </div>
+      <div class="s-item">
+        <span>cells <strong id="st-cells">—</strong></span>
+      </div>
+      <div class="s-item">
+        <span>cell size <strong id="st-cellsize">—</strong></span>
+      </div>
+    </div>
+
+  </section>
+
+</div><!-- /main -->
+
+<!-- ════════════════════════════════════════
+     EXPORT MODAL
+════════════════════════════════════════ -->
+<div class="modal-bg" id="export-modal">
+  <div class="modal">
+    <div class="modal-title">Export Configuration JSON</div>
+    <textarea id="export-ta" readonly spellcheck="false"></textarea>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="copyExport()">Copy</button>
+      <button class="btn btn-accent" onclick="downloadExport()">Download config.json</button>
+      <button class="btn btn-ghost" onclick="closeModal('export-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════
+     IMPORT MODAL
+════════════════════════════════════════ -->
+<div class="modal-bg" id="import-modal">
+  <div class="modal">
+    <div class="modal-title">Import Configuration JSON</div>
+    <textarea id="import-ta" placeholder="Paste your config JSON here…" spellcheck="false"></textarea>
+    <div class="modal-msg" id="import-msg"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('import-modal')">Cancel</button>
+      <button class="btn btn-accent" onclick="applyImport()">Apply Config</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- ════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════ -->
+<script>
+'use strict';
+
+// ─── PDF.js setup ────────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS  (mirrored exactly in process.py)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const PAPER_SIZES = {
+  a4:      { w: 595,  h: 842  },
+  a3:      { w: 842,  h: 1191 },
+  a5:      { w: 420,  h: 595  },
+  letter:  { w: 612,  h: 792  },
+  legal:   { w: 612,  h: 1008 },
+  tabloid: { w: 792,  h: 1224 },
+};
+
+// cols × rows for each standard N-up value
+const NUP_PRESETS = {
+  1:  { cols: 1, rows: 1 },
+  2:  { cols: 2, rows: 1 },
+  4:  { cols: 2, rows: 2 },
+  6:  { cols: 3, rows: 2 },
+  8:  { cols: 4, rows: 2 },
+  9:  { cols: 3, rows: 3 },
+  12: { cols: 4, rows: 3 },
+  16: { cols: 4, rows: 4 },
+};
+
+const PT_TO_MM = 0.3528;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const state = {
+  pdf:          null,       // PDF.js document
+  pages:        [],         // Array<HTMLCanvasElement | null>
+  currentSheet: 0,
+  zoom:         1.0,        // 1.0 = fit-to-area
+  rendering:    false,
+  renderAbort:  false,
+
+  config: {
+    paper:       'a4',
+    orientation: 'portrait',
+    nup:         1,
+    layout:      { cols: 1, rows: 1 },
+    margin:      18,
+    gap:         6,
+    hAlign:      'center',   // 'left' | 'center' | 'right'
+    vAlign:      'center',   // 'top'  | 'center' | 'bottom'
+    grayscale:   false,
+    invert:      false,
+    border:      false,
+    quality:     2,
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYOUT ENGINE  — MUST MIRROR process.py compute_layout() EXACTLY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Compute sheet geometry.  All values in PDF points.
+ *
+ *   cell_width  = (paper_width  - 2*margin - (cols-1)*gap) / cols
+ *   cell_height = (paper_height - 2*margin - (rows-1)*gap) / rows
+ *   cell_x[c]   = margin + c * (cell_width  + gap)
+ *   cell_y[r]   = margin + r * (cell_height + gap)
+ */
+function computeLayout(cfg) {
+  const paper = PAPER_SIZES[cfg.paper];
+  let pw = paper.w, ph = paper.h;
+  if (cfg.orientation === 'landscape') { [pw, ph] = [ph, pw]; }
+
+  const { cols, rows } = cfg.layout;
+  const m = cfg.margin, g = cfg.gap;
+
+  // ── EXACT FORMULA ─────────────────────────────────────────────────────────
+  const cellW = (pw - 2*m - (cols-1)*g) / cols;
+  const cellH = (ph - 2*m - (rows-1)*g) / rows;
+
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells.push({
+        x: m + c*(cellW+g),
+        y: m + r*(cellH+g),
+        w: cellW, h: cellH,
+      });
+    }
+  }
+
+  return { pw, ph, cols, rows, cellW, cellH, cells };
+}
+
+/**
+ * Aspect-ratio-preserving fit of srcW×srcH into cell.
+ * Horizontal alignment: 'left' | 'center' | 'right'
+ * Vertical   alignment: 'top'  | 'center' | 'bottom'
+ */
+function fitInCell(srcW, srcH, cell, hAlign, vAlign) {
+  const scale = Math.min(cell.w / srcW, cell.h / srcH);
+  const sw = srcW * scale, sh = srcH * scale;
+
+  // Horizontal offset
+  let ox;
+  if      (hAlign === 'left')   ox = 0;
+  else if (hAlign === 'right')  ox = cell.w - sw;
+  else                          ox = (cell.w - sw) / 2;   // center (default)
+
+  // Vertical offset
+  let oy;
+  if      (vAlign === 'top')    oy = 0;
+  else if (vAlign === 'bottom') oy = cell.h - sh;
+  else                          oy = (cell.h - sh) / 2;   // center (default)
+
+  return {
+    x: cell.x + ox,
+    y: cell.y + oy,
+    w: sw, h: sh, scale,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COLOR TRANSFORM ENGINE  — mirrors Python transform_pixmap() EXACTLY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Apply grayscale and/or invert to a source canvas using pixel-level math.
+ * Returns the SAME canvas object if no transforms are needed (zero overhead).
+ * Returns a NEW canvas with transformed pixels otherwise.
+ *
+ * Operation order (must match Python transform_pixmap):
+ *   1. Grayscale  — luminance formula: gray = 0.2126*R + 0.7152*G + 0.0722*B
+ *   2. Invert     — r = 255-r, g = 255-g, b = 255-b
+ *
+ * Alpha channel is never modified.
+ */
+function applyColorTransform(srcCanvas, doGray, doInvert) {
+  if (!doGray && !doInvert) return srcCanvas;  // fast path — no copy
+
+  // Create output canvas at same resolution as source
+  const out = document.createElement('canvas');
+  out.width  = srcCanvas.width;
+  out.height = srcCanvas.height;
+  const ctx  = out.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(srcCanvas, 0, 0);
+
+  const imgData = ctx.getImageData(0, 0, out.width, out.height);
+  const d = imgData.data;   // Uint8ClampedArray: [R,G,B,A, R,G,B,A, ...]
+
+  for (let i = 0; i < d.length; i += 4) {
+    let r = d[i], g = d[i+1], b = d[i+2];
+    // d[i+3] = alpha — untouched
+
+    // ── Step 1: Grayscale via luminance formula ────────────────────────────
+    // Identical coefficients to Python: 0.2126 / 0.7152 / 0.0722
+    if (doGray) {
+      const gray = (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.5) | 0;
+      r = gray; g = gray; b = gray;
+    }
+
+    // ── Step 2: Invert ─────────────────────────────────────────────────────
+    if (doInvert) {
+      r = 255 - r;
+      g = 255 - g;
+      b = 255 - b;
+    }
+
+    d[i] = r; d[i+1] = g; d[i+2] = b;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PDF LOADING & RENDERING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function loadPDF(file) {
+  setStatus('busy', `Loading ${file.name}…`);
+  showProgress(true, 'Loading PDF…');
+
+  try {
+    const ab = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+
+    state.pdf = pdf;
+    state.pages = new Array(pdf.numPages).fill(null);
+    state.currentSheet = 0;
+    state.renderAbort = false;
+
+    // Update badge
+    document.getElementById('pdf-name').textContent = file.name;
+    document.getElementById('pdf-pages').textContent = `${pdf.numPages} pp`;
+    document.getElementById('pdf-badge').classList.add('visible');
+    document.getElementById('empty-state').style.display = 'none';
+
+    // Render pages progressively
+    await renderPagesProgressively(pdf);
+
+  } catch(e) {
+    setStatus('', `Error: ${e.message}`);
+    showProgress(false);
+    showToast(`Failed to load PDF: ${e.message}`);
+  }
+}
+
+async function renderPagesProgressively(pdf) {
+  const q = state.config.quality;
+  const layout = computeLayout(state.config);
+  const perSheet = layout.cols * layout.rows;
+
+  // Render first sheet pages first for immediate feedback
+  const firstBatch = Math.min(perSheet, pdf.numPages);
+
+  for (let i = 0; i < firstBatch; i++) {
+    if (state.renderAbort) return;
+    state.pages[i] = await renderPage(pdf, i + 1, q);
+    showProgress(true, `Rendering page ${i+1} / ${pdf.numPages}`);
+  }
+
+  renderPreview();
+  updateSheetNav();
+
+  // Then render remaining pages in background
+  for (let i = firstBatch; i < pdf.numPages; i++) {
+    if (state.renderAbort) return;
+    state.pages[i] = await renderPage(pdf, i + 1, q);
+    showProgress(true, `Rendering page ${i+1} / ${pdf.numPages}`);
+    // Refresh view if this page is on the current sheet
+    const curStart = state.currentSheet * perSheet;
+    if (i >= curStart && i < curStart + perSheet) renderPreview();
+  }
+
+  showProgress(false);
+  setStatus('ok', `${pdf.numPages} pages loaded`);
+  renderPreview();
+}
+
+async function renderPage(pdf, pageNum, quality) {
+  const page = await pdf.getPage(pageNum);
+  const vp   = page.getViewport({ scale: quality });
+  const cv   = document.createElement('canvas');
+  cv.width   = vp.width;
+  cv.height  = vp.height;
+  const ctx  = cv.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  return cv;
+}
+
+// Re-render all pages (called on quality change)
+async function rerenderPages() {
+  if (!state.pdf) return;
+  state.renderAbort = true;
+  await new Promise(r => setTimeout(r, 60));
+  state.renderAbort = false;
+  state.pages = new Array(state.pdf.numPages).fill(null);
+  await renderPagesProgressively(state.pdf);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PREVIEW RENDERER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function getViewScale() {
+  const outer = document.getElementById('canvas-outer');
+  const maxW  = outer.clientWidth  - 56;
+  const maxH  = outer.clientHeight - 56;
+  if (maxW <= 0 || maxH <= 0) return 1;
+  const layout = computeLayout(state.config);
+  const fit = Math.min(maxW / layout.pw, maxH / layout.ph);
+  return Math.max(0.05, fit * state.zoom);
+}
+
+function renderPreview() {
+  const cfg    = state.config;
+  const layout = computeLayout(cfg);
+  const vs     = getViewScale();
+
+  const canvas = document.getElementById('preview-canvas');
+  canvas.width  = Math.round(layout.pw * vs);
+  canvas.height = Math.round(layout.ph * vs);
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // ── Sheet background ─────────────────────────────────────────────
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const perSheet = layout.cols * layout.rows;
+  const startIdx = state.currentSheet * perSheet;
+
+  layout.cells.forEach((cell, i) => {
+    const pi = startIdx + i;
+
+    // Scale cell rect to viewport
+    const cx = cell.x * vs;
+    const cy = cell.y * vs;
+    const cw = cell.w * vs;
+    const ch = cell.h * vs;
+
+    // ── Draw page ────────────────────────────────────────────────────
+    const pgCanvas = state.pages[pi] || null;
+
+    if (pgCanvas) {
+      // fitInCell in VIEWPORT pixel space
+      const fit = fitInCell(pgCanvas.width, pgCanvas.height,
+                             { x: cx, y: cy, w: cw, h: ch },
+                             cfg.hAlign, cfg.vAlign);
+
+      // Pixel-level color transform (luminance grayscale + invert).
+      // applyColorTransform() returns srcCanvas unchanged when both flags
+      // are false, so there is no overhead for the normal (no-transform) case.
+      // Order: grayscale first, then invert — identical to Python transform_pixmap().
+      const drawn = applyColorTransform(pgCanvas, cfg.grayscale, cfg.invert);
+      ctx.drawImage(drawn, fit.x, fit.y, fit.w, fit.h);
+
+    } else if (pi < (state.pdf ? state.pdf.numPages : 0)) {
+      // Placeholder while rendering
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(cx, cy, cw, ch);
+      ctx.fillStyle = '#aaa';
+      ctx.font = `${Math.min(cw, ch) * 0.1}px JetBrains Mono`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('⋯', cx + cw/2, cy + ch/2);
+
+    } else {
+      // Empty cell (no more pages)
+      ctx.fillStyle = '#fafafa';
+      ctx.fillRect(cx, cy, cw, ch);
+    }
+
+    // ── Cell border ──────────────────────────────────────────────────
+    if (cfg.border) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+      ctx.lineWidth   = 0.75;
+      ctx.strokeRect(cx, cy, cw, ch);
+    }
+
+    // ── Page number label (debug aid) ───────────────────────────────
+    if (pi < (state.pdf ? state.pdf.numPages : perSheet)) {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.font = `${Math.max(7, Math.min(cw, ch) * 0.06)}px JetBrains Mono`;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(`p${pi+1}`, cx + 3, cy + 2);
+    }
+  });
+
+  // ── Sheet outline ────────────────────────────────────────────────
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth   = 0.5;
+  ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+  // Update info chips
+  updateInfoChips(layout, vs);
+  updateStatusBar(layout);
+  updateSheetNav();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function updateInfoChips(layout, vs) {
+  const pt2mm = v => (v * PT_TO_MM).toFixed(1);
+
+  document.getElementById('paper-info-chips').innerHTML =
+    `<div class="chip"><strong>${layout.pw}×${layout.ph}</strong> pt</div>
+     <div class="chip"><strong>${pt2mm(layout.pw)}×${pt2mm(layout.ph)}</strong> mm</div>`;
+
+  document.getElementById('cell-info-chips').innerHTML =
+    `<div class="chip">cell <strong>${layout.cellW.toFixed(1)}×${layout.cellH.toFixed(1)}</strong> pt</div>
+     <div class="chip"><strong>${pt2mm(layout.cellW)}×${pt2mm(layout.cellH)}</strong> mm</div>
+     <div class="chip">scale <strong>${(Math.min(layout.cellW / layout.pw, layout.cellH / layout.ph)*100).toFixed(0)}%</strong></div>`;
+}
+
+function updateStatusBar(layout) {
+  const pt2mm = v => (v * PT_TO_MM).toFixed(1);
+  document.getElementById('st-paper').textContent =
+    `${state.config.paper.toUpperCase()} ${state.config.orientation}`;
+  document.getElementById('st-cells').textContent =
+    `${layout.cols}×${layout.rows} (${layout.cols*layout.rows})`;
+  document.getElementById('st-cellsize').textContent =
+    `${layout.cellW.toFixed(0)}×${layout.cellH.toFixed(0)} pt`;
+}
+
+function updateSheetNav() {
+  const layout    = computeLayout(state.config);
+  const perSheet  = layout.cols * layout.rows;
+  const numPages  = state.pdf ? state.pdf.numPages : perSheet;
+  const numSheets = Math.max(1, Math.ceil(numPages / perSheet));
+
+  document.getElementById('cur-sheet').textContent  = state.currentSheet + 1;
+  document.getElementById('tot-sheets').textContent = numSheets;
+  document.getElementById('prev-btn').disabled = state.currentSheet === 0;
+  document.getElementById('next-btn').disabled = state.currentSheet >= numSheets - 1;
+}
+
+function setStatus(type, msg) {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-msg');
+  dot.className = 'status-dot' + (type ? ` ${type}` : '');
+  txt.textContent = msg;
+}
+
+function showProgress(visible, msg = '') {
+  const el = document.getElementById('render-prog');
+  el.style.display = visible ? 'flex' : 'none';
+  if (msg) document.getElementById('render-prog-txt').textContent = msg;
+}
+
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function toggleSection(id) {
+  const sec = document.getElementById(id);
+  sec.classList.toggle('open');
+  sec.classList.toggle('closed');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIG MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Read current config from state */
+function getConfig() {
+  return JSON.parse(JSON.stringify(state.config));
+}
+
+/** Apply a config object to state + UI, then re-render */
+function setConfig(cfg) {
+  // Validate and fill defaults
+  const c = state.config;
+  if (cfg.paper && PAPER_SIZES[cfg.paper])        c.paper       = cfg.paper;
+  if (cfg.orientation)                             c.orientation = cfg.orientation;
+  if (cfg.layout?.cols && cfg.layout?.rows) {
+    c.layout.cols = Math.max(1, Math.min(20, parseInt(cfg.layout.cols)));
+    c.layout.rows = Math.max(1, Math.min(20, parseInt(cfg.layout.rows)));
+  }
+  if (cfg.nup && NUP_PRESETS[cfg.nup]) {
+    c.nup = cfg.nup;
+    c.layout = { ...NUP_PRESETS[cfg.nup] };
+  }
+  if (cfg.margin !== undefined) c.margin = Math.max(0, Math.min(200, parseFloat(cfg.margin)));
+  if (cfg.gap    !== undefined) c.gap    = Math.max(0, Math.min(72,  parseFloat(cfg.gap)));
+  if (['left','center','right'].includes(cfg.hAlign)) c.hAlign = cfg.hAlign;
+  if (['top','center','bottom'].includes(cfg.vAlign)) c.vAlign = cfg.vAlign;
+  if (cfg.grayscale !== undefined) c.grayscale = !!cfg.grayscale;
+  if (cfg.invert    !== undefined) c.invert    = !!cfg.invert;
+  if (cfg.border    !== undefined) c.border    = !!cfg.border;
+  if (cfg.quality   !== undefined) c.quality   = Math.max(0.5, Math.min(4, parseFloat(cfg.quality)));
+
+  syncUIFromConfig();
+  renderPreview();
+}
+
+/** Sync all UI controls to match state.config */
+function syncUIFromConfig() {
+  const c = state.config;
+
+  // Paper toggles
+  document.querySelectorAll('#paper-tog .tog-btn').forEach(b => {
+    b.classList.toggle('on', b.dataset.val === c.paper);
+  });
+  // Orientation toggles
+  document.querySelectorAll('#orient-tog .tog-btn').forEach(b => {
+    b.classList.toggle('on', b.dataset.val === c.orientation);
+  });
+  // NUP buttons
+  document.querySelectorAll('.nup-btn').forEach(b => {
+    b.classList.toggle('on', parseInt(b.dataset.nup) === c.nup);
+  });
+  // Grid inputs
+  document.getElementById('cols-in').value = c.layout.cols;
+  document.getElementById('rows-in').value = c.layout.rows;
+  // Spacing
+  document.getElementById('margin-range').value = c.margin;
+  document.getElementById('margin-in').value    = c.margin;
+  document.getElementById('margin-val').textContent = c.margin;
+  document.getElementById('gap-range').value    = c.gap;
+  document.getElementById('gap-in').value       = c.gap;
+  document.getElementById('gap-val').textContent = c.gap;
+  // Alignment toggles
+  document.querySelectorAll('#halign-tog .tog-btn').forEach(b =>
+    b.classList.toggle('on', b.dataset.val === (c.hAlign || 'center')));
+  document.querySelectorAll('#valign-tog .tog-btn').forEach(b =>
+    b.classList.toggle('on', b.dataset.val === (c.vAlign || 'center')));
+  // Appearance
+  document.getElementById('gray-chk').checked   = c.grayscale;
+  document.getElementById('invert-chk').checked = c.invert;
+  document.getElementById('border-chk').checked = c.border;
+  document.getElementById('quality-range').value = c.quality;
+  document.getElementById('quality-val').textContent = c.quality + '×';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function openExportModal() {
+  const cfg = getConfig();
+  // Add version tag
+  cfg.version = '1.0';
+  document.getElementById('export-ta').value = JSON.stringify(cfg, null, 2);
+  document.getElementById('export-modal').classList.add('open');
+}
+
+function copyExport() {
+  navigator.clipboard.writeText(document.getElementById('export-ta').value)
+    .then(() => showToast('Config copied to clipboard'));
+}
+
+function downloadExport() {
+  const json = document.getElementById('export-ta').value;
+  const blob = new Blob([json], { type: 'application/json' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'layout-config.json';
+  a.click();
+}
+
+function openImportModal() {
+  document.getElementById('import-ta').value = '';
+  document.getElementById('import-msg').textContent = '';
+  document.getElementById('import-modal').classList.add('open');
+}
+
+function applyImport() {
+  const raw = document.getElementById('import-ta').value.trim();
+  const msg = document.getElementById('import-msg');
+  try {
+    const cfg = JSON.parse(raw);
+    setConfig(cfg);
+    closeModal('import-modal');
+    showToast('Config applied ✓');
+  } catch(e) {
+    msg.textContent = `JSON parse error: ${e.message}`;
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const STORAGE_KEY = 'pdf-layout-studio-presets';
+
+function loadPresetsFromStorage() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch { return []; }
+}
+
+function savePresetsToStorage(presets) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+}
+
+function renderPresetList() {
+  const list    = document.getElementById('preset-list');
+  const presets = loadPresetsFromStorage();
+
+  if (!presets.length) {
+    list.innerHTML = '<div style="font-size:9px;color:var(--muted);padding:4px 0">No presets saved yet</div>';
+    return;
+  }
+
+  list.innerHTML = presets.map((p, i) => `
+    <div class="preset-item" onclick="applyPreset(${i})">
+      <span class="preset-name">${escHTML(p.name)}</span>
+      <span class="preset-desc">${escHTML(describeConfig(p.config))}</span>
+      <span class="preset-del" onclick="event.stopPropagation();deletePreset(${i})" title="Delete">×</span>
+    </div>
+  `).join('');
+}
+
+function describeConfig(cfg) {
+  const p = cfg.paper?.toUpperCase() || '';
+  const o = cfg.orientation === 'landscape' ? 'L' : 'P';
+  const n = cfg.nup || (cfg.layout ? cfg.layout.cols * cfg.layout.rows : '?');
+  return `${p} ${o} · ${n}-up`;
+}
+
+function savePreset() {
+  const name = document.getElementById('preset-name-in').value.trim();
+  if (!name) { showToast('Enter a preset name first'); return; }
+  const presets = loadPresetsFromStorage();
+  presets.push({ name, config: getConfig() });
+  savePresetsToStorage(presets);
+  document.getElementById('preset-name-in').value = '';
+  renderPresetList();
+  showToast(`Preset "${name}" saved`);
+}
+
+function applyPreset(i) {
+  const presets = loadPresetsFromStorage();
+  if (presets[i]) {
+    setConfig(presets[i].config);
+    showToast(`Preset "${presets[i].name}" applied`);
+  }
+}
+
+function deletePreset(i) {
+  const presets = loadPresetsFromStorage();
+  const name    = presets[i]?.name;
+  presets.splice(i, 1);
+  savePresetsToStorage(presets);
+  renderPresetList();
+  showToast(`Preset "${name}" deleted`);
+}
+
+function escHTML(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function prevSheet() {
+  if (state.currentSheet > 0) { state.currentSheet--; renderPreview(); }
+}
+
+function nextSheet() {
+  const layout   = computeLayout(state.config);
+  const perSheet = layout.cols * layout.rows;
+  const numPages = state.pdf ? state.pdf.numPages : perSheet;
+  const maxSheet = Math.ceil(numPages / perSheet) - 1;
+  if (state.currentSheet < maxSheet) { state.currentSheet++; renderPreview(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EVENT WIRING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Debounce utility
+function debounce(fn, ms) {
+  let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+const deferRender = debounce(() => { state.currentSheet = 0; renderPreview(); }, 80);
+
+// ── File Input ──────────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadPDF(e.target.files[0]);
+});
+
+// Drop on canvas area
+const outer = document.getElementById('canvas-outer');
+outer.addEventListener('dragover', e => { e.preventDefault(); outer.style.outline = '2px dashed var(--accent)'; });
+outer.addEventListener('dragleave', () => { outer.style.outline = ''; });
+outer.addEventListener('drop', e => {
+  e.preventDefault(); outer.style.outline = '';
+  const f = e.dataTransfer.files[0];
+  if (f?.type === 'application/pdf') loadPDF(f);
+});
+
+// ── Paper toggles ─────────────────────────────────────────────────────────
+document.getElementById('paper-tog').addEventListener('click', e => {
+  const btn = e.target.closest('.tog-btn');
+  if (!btn) return;
+  state.config.paper = btn.dataset.val;
+  document.querySelectorAll('#paper-tog .tog-btn').forEach(b =>
+    b.classList.toggle('on', b === btn));
+  deferRender();
+});
+
+document.getElementById('orient-tog').addEventListener('click', e => {
+  const btn = e.target.closest('.tog-btn');
+  if (!btn) return;
+  state.config.orientation = btn.dataset.val;
+  document.querySelectorAll('#orient-tog .tog-btn').forEach(b =>
+    b.classList.toggle('on', b === btn));
+  deferRender();
+});
+
+// ── N-Up buttons ──────────────────────────────────────────────────────────
+document.getElementById('nup-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.nup-btn');
+  if (!btn) return;
+  const n = parseInt(btn.dataset.nup);
+  state.config.nup = n;
+  state.config.layout = { ...NUP_PRESETS[n] };
+  document.querySelectorAll('.nup-btn').forEach(b =>
+    b.classList.toggle('on', parseInt(b.dataset.nup) === n));
+  // Sync grid inputs
+  document.getElementById('cols-in').value = state.config.layout.cols;
+  document.getElementById('rows-in').value = state.config.layout.rows;
+  state.currentSheet = 0;
+  deferRender();
+});
+
+// ── Custom grid inputs ────────────────────────────────────────────────────
+function onGridChange() {
+  const cols = Math.max(1, Math.min(20, parseInt(document.getElementById('cols-in').value) || 1));
+  const rows = Math.max(1, Math.min(20, parseInt(document.getElementById('rows-in').value) || 1));
+  state.config.layout = { cols, rows };
+  // Deselect all nup preset buttons
+  const n = cols * rows;
+  state.config.nup = NUP_PRESETS[n] ? n : null;
+  document.querySelectorAll('.nup-btn').forEach(b =>
+    b.classList.toggle('on', parseInt(b.dataset.nup) === state.config.nup));
+  state.currentSheet = 0;
+  deferRender();
+}
+document.getElementById('cols-in').addEventListener('input', onGridChange);
+document.getElementById('rows-in').addEventListener('input', onGridChange);
+
+// ── Margin ────────────────────────────────────────────────────────────────
+function syncMargin(v) {
+  v = Math.max(0, Math.min(200, parseFloat(v) || 0));
+  state.config.margin = v;
+  document.getElementById('margin-range').value       = v;
+  document.getElementById('margin-in').value          = v;
+  document.getElementById('margin-val').textContent   = v;
+  deferRender();
+}
+document.getElementById('margin-range').addEventListener('input', e => syncMargin(e.target.value));
+document.getElementById('margin-in').addEventListener('input',   e => syncMargin(e.target.value));
+
+// ── Gap ───────────────────────────────────────────────────────────────────
+function syncGap(v) {
+  v = Math.max(0, Math.min(72, parseFloat(v) || 0));
+  state.config.gap = v;
+  document.getElementById('gap-range').value       = v;
+  document.getElementById('gap-in').value          = v;
+  document.getElementById('gap-val').textContent   = v;
+  deferRender();
+}
+document.getElementById('gap-range').addEventListener('input', e => syncGap(e.target.value));
+document.getElementById('gap-in').addEventListener('input',   e => syncGap(e.target.value));
+
+// ── Horizontal Alignment ──────────────────────────────────────────────────
+document.getElementById('halign-tog').addEventListener('click', e => {
+  const btn = e.target.closest('.tog-btn');
+  if (!btn) return;
+  state.config.hAlign = btn.dataset.val;
+  document.querySelectorAll('#halign-tog .tog-btn').forEach(b =>
+    b.classList.toggle('on', b === btn));
+  deferRender();
+});
+
+// ── Vertical Alignment ────────────────────────────────────────────────────
+document.getElementById('valign-tog').addEventListener('click', e => {
+  const btn = e.target.closest('.tog-btn');
+  if (!btn) return;
+  state.config.vAlign = btn.dataset.val;
+  document.querySelectorAll('#valign-tog .tog-btn').forEach(b =>
+    b.classList.toggle('on', b === btn));
+  deferRender();
+});
+
+// ── Checkboxes ───────────────────────────────────────────────────────────
+document.getElementById('gray-chk').addEventListener('change', e => {
+  state.config.grayscale = e.target.checked; deferRender();
+});
+document.getElementById('invert-chk').addEventListener('change', e => {
+  state.config.invert = e.target.checked; deferRender();
+});
+document.getElementById('border-chk').addEventListener('change', e => {
+  state.config.border = e.target.checked; deferRender();
+});
+
+// ── Quality ──────────────────────────────────────────────────────────────
+const debouncedRerender = debounce(() => rerenderPages(), 600);
+document.getElementById('quality-range').addEventListener('input', e => {
+  const q = parseFloat(e.target.value);
+  state.config.quality = q;
+  document.getElementById('quality-val').textContent = q + '×';
+  debouncedRerender();
+});
+
+// ── Zoom ─────────────────────────────────────────────────────────────────
+document.getElementById('zoom-range').addEventListener('input', e => {
+  state.zoom = parseInt(e.target.value) / 100;
+  document.getElementById('zoom-val').textContent = e.target.value + '%';
+  renderPreview();
+});
+
+// ── Window resize ─────────────────────────────────────────────────────────
+const debouncedResize = debounce(() => renderPreview(), 150);
+window.addEventListener('resize', debouncedResize);
+
+// ── Close modals on backdrop click ────────────────────────────────────────
+document.querySelectorAll('.modal-bg').forEach(bg => {
+  bg.addEventListener('click', e => {
+    if (e.target === bg) bg.classList.remove('open');
+  });
+});
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextSheet();
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   prevSheet();
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function init() {
+  syncUIFromConfig();
+  renderPresetList();
+  renderPreview();  // Draws empty layout grid
+  setStatus('', 'Ready — open a PDF to begin');
+}
+
+init();
+</script>
+</body>
+</html>
